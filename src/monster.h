@@ -1,0 +1,269 @@
+/*
+ * YurOTS, a free game server emulator 
+ * Official Repository on Github <https://github.com/RafaelTolomeotti/yurOTS-Tibinha>
+ * Copyright (C) 2024 - RafaelTolomeotti <https://github.com/RafaelTolomeotti>
+ * A fork of The Forgotten Server(Mark Samman) branch 1.2 and part of Nostalrius(Alejandro Mujica) repositories.
+ *
+ * The MIT License (MIT). Copyright © 2020 <YurOTS>
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), 
+ * to deal in the Software without restriction, including without limitation 
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, 
+ * and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+*/
+
+#ifndef FS_MONSTER_H_9F5EEFE64314418CA7DA41D1B9409DD0
+#define FS_MONSTER_H_9F5EEFE64314418CA7DA41D1B9409DD0
+
+#include "tile.h"
+#include "monsters.h"
+
+class Creature;
+class Game;
+class Spawn;
+class Combat;
+
+typedef std::unordered_set<Creature*> CreatureHashSet;
+typedef std::list<Creature*> CreatureList;
+
+enum TargetSearchType_t {
+	TARGETSEARCH_ANY,
+	TARGETSEARCH_RANDOM,
+	TARGETSEARCH_NEAREST,
+	TARGETSEARCH_WEAKEST,
+	TARGETSEARCH_MOSTDAMAGE,
+};
+
+class Monster final : public Creature
+{
+	public:
+		static Monster* createMonster(const std::string& name);
+		static int32_t despawnRange;
+		static int32_t despawnRadius;
+
+		explicit Monster(MonsterType* mtype);
+		~Monster();
+
+		// non-copyable
+		Monster(const Monster&) = delete;
+		Monster& operator=(const Monster&) = delete;
+
+		Monster* getMonster() final {
+			return this;
+		}
+		const Monster* getMonster() const final {
+			return this;
+		}
+
+		void setID() final {
+			if (id == 0) {
+				id = monsterAutoID++;
+			}
+		}
+
+		void removeList() final;
+		void addList() final;
+
+		const std::string& getName() const final {
+			return mType->name;
+		}
+		const std::string& getNameDescription() const final {
+			return mType->nameDescription;
+		}
+		std::string getDescription(int32_t) const final {
+			return strDescription + '.';
+		}
+
+		const Position& getMasterPos() const {
+			return masterPos;
+		}
+		void setMasterPos(Position pos) {
+			masterPos = pos;
+		}
+
+		RaceType_t getRace() const final {
+			return mType->info.race;
+		}
+		int32_t getArmor() const final {
+			int32_t armor = mType->info.armor;
+			if (armor > 1) {
+				return rand() % (mType->info.armor >> 1) + (mType->info.armor >> 1);
+			}
+
+			return armor;
+		}
+		int32_t getDefense() final;
+		bool isPushable() const final {
+			return mType->info.pushable && baseSpeed != 0;
+		}
+		bool isAttackable() const final {
+			return mType->info.isAttackable;
+		}
+
+		bool canPushItems() const {
+			return mType->info.canPushItems;
+		}
+		bool canPushCreatures() const {
+			return mType->info.canPushCreatures;
+		}
+		bool isHostile() const {
+			return mType->info.isHostile;
+		}
+		bool canSee(const Position& pos) const final;
+		bool canSeeInvisibility() const final {
+			return isImmune(CONDITION_INVISIBLE);
+		}
+		uint32_t getManaCost() const {
+			return mType->info.manaCost;
+		}
+		void setSpawn(Spawn* spawn) {
+			this->spawn = spawn;
+		}
+
+		void onAttackedCreature(Creature* creature) final;
+
+		void onCreatureAppear(Creature* creature, bool isLogin) final;
+		void onRemoveCreature(Creature* creature, bool isLogout) final;
+		void onCreatureMove(Creature* creature, const Tile* newTile, const Position& newPos, const Tile* oldTile, const Position& oldPos, bool teleport) final;
+		void onCreatureSay(Creature* creature, SpeakClasses type, const std::string& text) final;
+
+		void drainHealth(Creature* attacker, int32_t damage) final;
+		void changeHealth(int32_t healthChange, bool sendHealthChange = true) final;
+		void onWalk() final;
+		bool getNextStep(Direction& direction, uint32_t& flags) final;
+		void onFollowCreatureComplete(const Creature* creature) final;
+
+		void onThink(uint32_t interval) final;
+
+		bool challengeCreature(Creature* creature) final;
+		bool convinceCreature(Creature* creature) final;
+
+		void setNormalCreatureLight() final;
+		bool getCombatValues(int32_t& min, int32_t& max) final;
+
+		void doAttacking(uint32_t interval) final;
+
+		bool searchTarget(TargetSearchType_t searchType);
+		bool selectTarget(Creature* creature);
+
+		const CreatureList& getTargetList() const {
+			return targetList;
+		}
+		const CreatureHashSet& getFriendList() const {
+			return friendList;
+		}
+
+		bool isTarget(const Creature* creature) const;
+		bool isFleeing() const {
+			return !isSummon() && getHealth() <= mType->info.runAwayHealth;
+		}
+
+		bool getDistanceStep(const Position& targetPos, Direction& direction, bool flee = false);
+		bool isTargetNearby() const {
+			return stepDuration >= 1;
+		}
+
+		BlockType_t blockHit(Creature* attacker, CombatType_t combatType, int32_t& damage,
+		                     bool checkDefense = false, bool checkArmor = false, bool field = false);
+
+		static uint32_t monsterAutoID;
+
+	private:
+		CreatureHashSet friendList;
+		CreatureList targetList;
+
+		std::string strDescription;
+
+		MonsterType* mType;
+		Spawn* spawn = nullptr;
+
+		int64_t lifetime = 0;
+		int64_t nextDanceStepRound = 0;
+		int64_t earliestAttackTime = 0;
+		int64_t earliestWakeUpTime = 0;
+		int64_t earliestDanceTime = 0;
+
+		uint32_t targetChangeTicks = 0;
+		int32_t minCombatValue = 0;
+		int32_t maxCombatValue = 0;
+		int32_t targetChangeCooldown = 0;
+		int32_t stepDuration = 0;
+
+		Position masterPos;
+
+		bool isIdle = true;
+		bool isMasterInRange = false;
+		bool egibleToDance = true;
+
+		void onCreatureEnter(Creature* creature);
+		void onCreatureLeave(Creature* creature);
+		void onCreatureFound(Creature* creature, bool pushFront = false);
+
+		void updateLookDirection();
+
+		void addFriend(Creature* creature);
+		void removeFriend(Creature* creature);
+		void addTarget(Creature* creature, bool pushFront = false);
+		void removeTarget(Creature* creature);
+
+		void updateTargetList();
+		void clearTargetList();
+		void clearFriendList();
+
+		void death(Creature* lastHitCreature) final;
+		Item* getCorpse(Creature* lastHitCreature, Creature* mostDamageCreature) final;
+
+		void setIdle(bool idle);
+		void updateIdleStatus();
+		bool getIdleStatus() const {
+			return isIdle;
+		}
+
+		void onAddCondition(ConditionType_t type) final;
+		void onEndCondition(ConditionType_t type) final;
+		void onCreatureConvinced(const Creature* convincer, const Creature* creature) final;
+
+		bool canUseAttack(const Position& pos, const Creature* target) const;
+		bool getRandomStep(const Position& creaturePos, Direction& direction) const;
+		bool getDanceStep(const Position& creaturePos, Direction& direction,
+		                  bool keepAttack = true, bool keepDistance = true);
+		bool isInSpawnRange(const Position& pos) const;
+		bool canWalkTo(Position pos, Direction direction) const;
+
+		static bool pushItem(Item* item);
+		static void pushItems(Tile* tile);
+		static bool pushCreature(Creature* creature);
+		static void pushCreatures(Tile* tile);
+
+		void onThinkTarget(uint32_t interval);
+		void onThinkYell(uint32_t interval);
+		void onThinkDefense(uint32_t interval);
+
+		bool isFriend(const Creature* creature) const;
+		bool isOpponent(const Creature* creature) const;
+
+		uint64_t getLostExperience() const final {
+			return skillLoss ? mType->info.experience : 0;
+		}
+		uint16_t getLookCorpse() const final {
+			return mType->info.lookcorpse;
+		}
+		void dropLoot(Container* corpse, Creature* lastHitCreature) final;
+		uint32_t getDamageImmunities() const final {
+			return mType->info.damageImmunities;
+		}
+		uint32_t getConditionImmunities() const final {
+			return mType->info.conditionImmunities;
+		}
+		void getPathSearchParams(const Creature* creature, FindPathParams& fpp) const final;
+		bool useCacheMap() const final {
+			return true;
+		}
+
+		friend class LuaScriptInterface;
+		friend class AreaSpawnEvent;
+		friend class Combat;
+		friend class Creature;
+};
+
+#endif
