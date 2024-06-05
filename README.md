@@ -29,4 +29,5 @@ Run those commands on Linux Terminal (step by step)
 - Quit without close the current screen: ``control + A + D``
 
 
-### Discord: rodi#9161
+### Discord: Pifafa#8054
+### Discord: Rodrigo#1088
